@@ -69,6 +69,19 @@ export function Popup() {
     try {
       const res = (await chrome.runtime.sendMessage(msg)) as { kind: 'user_lists'; lists: UserLists };
       if (res?.lists) setLists(res.lists);
+      // Re-fetch tab state so the popup's badge pill reflects the new color
+      // immediately. Without this, the pill stays at its load-time value while
+      // the toolbar icon (which background paints synchronously) already
+      // updated, producing the "green pill / red toolbar" inconsistency.
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tab = tabs[0];
+      if (tab?.id) {
+        const tabRes = (await chrome.runtime.sendMessage({
+          kind: 'request_tab_state',
+          tab_id: tab.id,
+        })) as { kind: 'tab_state'; state: TabState | null };
+        setState(tabRes?.state ?? null);
+      }
     } finally {
       setBusy(false);
     }

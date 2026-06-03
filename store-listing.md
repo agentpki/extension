@@ -163,8 +163,10 @@ https://github.com/agentpki/extension/issues
 4. **"One-click anonymous abuse reports"**
    The Report-abuse modal open with the form populated.
 
-5. **"Local activity log — never leaves your browser"**
-   Options page showing the activity log with filter chips.
+5. **"All detection events stay on your device — filterable, exportable, never sent anywhere"**
+   Options page Activity log card with verdict filter chips, colored
+   verdict dots, and multiple log rows visible. Privacy disclosure line
+   visible above the chips.
 
 ## Promo tile (440x280, required)
 
