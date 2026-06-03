@@ -15,12 +15,19 @@
 
 import { defineBackground } from 'wxt/sandbox';
 import { verifyToken } from '../lib/verifier';
-import { appendActivity, getSettings } from '../lib/storage';
+import {
+  appendActivity,
+  getSettings,
+  getUserLists,
+  setUserLists,
+  DEFAULT_USER_LISTS,
+} from '../lib/storage';
 import type {
   AgentObservation,
   BadgeColor,
   ExtensionMessage,
   TabState,
+  UserLists,
   VerificationResult,
 } from '../lib/types';
 
@@ -64,8 +71,27 @@ const BADGE_PALETTE: Record<BadgeColor, { text: string; color: string; title: st
   blue: { text: '👤',    color: '#3b82f6', title: 'AgentPKI — your own agent' },
 };
 
+// In-memory snapshot of UserLists. Refreshed on each storage.sync change so
+// deriveBadge() stays synchronous + cheap. On cold start the SW awaits a one-
+// shot load; subsequent updates flow through the chrome.storage.onChanged
+// listener below.
+let cachedUserLists: UserLists = DEFAULT_USER_LISTS;
+
 function deriveBadge(st: TabState): BadgeColor {
   const v = st.verification;
+
+  // Blocked agents → red regardless of verification result
+  if (v?.passport) {
+    if (cachedUserLists.blocked_agents.includes(v.passport.agent_id)) return 'red';
+    if (cachedUserLists.blocked_issuers.includes(v.passport.issuer)) return 'red';
+  }
+  if (st.page_url) {
+    try {
+      const host = new URL(st.page_url).host;
+      if (cachedUserLists.blocked_domains.includes(host)) return 'red';
+    } catch { /* swallow */ }
+  }
+
   if (!v) {
     if (st.observations.length === 0) return 'gray';
     // We have an observation but no verify result yet — show interim
@@ -80,10 +106,21 @@ function deriveBadge(st: TabState): BadgeColor {
   }
   if (v.verdict === 'allow') {
     if (typeof v.abuse_score === 'number' && v.abuse_score > 0.5) return 'red';
+    // Own-agent (blue) — user has whitelisted this agent_id as theirs
+    if (v.passport && cachedUserLists.own_agents.includes(v.passport.agent_id)) return 'blue';
     return 'green';
   }
   // throttle / unknown — neither clean allow nor explicit deny
   return 'yellow';
+}
+
+// Repaint every tab's badge using the latest UserLists (called when user
+// blocks/whitelists/etc. and the live badge should reflect the change).
+async function repaintAllBadges(): Promise<void> {
+  for (const [tabId, st] of tabStates) {
+    st.badge = deriveBadge(st);
+    await paintBadge(tabId, st.badge);
+  }
 }
 
 async function paintBadge(tabId: number, color: BadgeColor): Promise<void> {
@@ -175,15 +212,63 @@ async function recordActivity(
 
 // ─── Lifecycle ────────────────────────────────────────────────────────
 
+async function applyListMutation(message: ExtensionMessage): Promise<UserLists> {
+  const current = await getUserLists();
+  const next: UserLists = {
+    blocked_agents: [...current.blocked_agents],
+    blocked_issuers: [...current.blocked_issuers],
+    blocked_domains: [...current.blocked_domains],
+    whitelisted_agents: [...current.whitelisted_agents],
+    whitelisted_issuers: [...current.whitelisted_issuers],
+    own_agents: [...current.own_agents],
+  };
+  const addUnique = (arr: string[], v: string) => {
+    if (!arr.includes(v)) arr.push(v);
+  };
+  const removeAll = (arr: string[], v: string) => {
+    const i = arr.indexOf(v);
+    if (i >= 0) arr.splice(i, 1);
+  };
+  switch (message.kind) {
+    case 'block_agent':       addUnique(next.blocked_agents, message.agent_id); break;
+    case 'block_issuer':      addUnique(next.blocked_issuers, message.issuer); break;
+    case 'block_domain':      addUnique(next.blocked_domains, message.domain); break;
+    case 'unblock_agent':     removeAll(next.blocked_agents, message.agent_id); break;
+    case 'unblock_issuer':    removeAll(next.blocked_issuers, message.issuer); break;
+    case 'whitelist_agent':   addUnique(next.whitelisted_agents, message.agent_id); break;
+    case 'whitelist_issuer':  addUnique(next.whitelisted_issuers, message.issuer); break;
+    case 'mark_as_own_agent': addUnique(next.own_agents, message.agent_id); break;
+    case 'unmark_own_agent':  removeAll(next.own_agents, message.agent_id); break;
+    default: return current;
+  }
+  await setUserLists(next);
+  cachedUserLists = next;
+  void repaintAllBadges();
+  return next;
+}
+
 export default defineBackground({
   type: 'module',
   main() {
     void rehydrate();
+    void getUserLists().then((lists) => { cachedUserLists = lists; void repaintAllBadges(); });
 
     chrome.runtime.onInstalled.addListener(async () => {
       // First-run setup
       const settings = await getSettings();
       void settings;
+    });
+
+    // Keep cachedUserLists fresh if the user edits them through the Options page
+    // or another extension surface concurrently.
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'sync') return;
+      if (!('agentpki:user_lists' in changes)) return;
+      const newValue = changes['agentpki:user_lists']?.newValue;
+      if (newValue && typeof newValue === 'object') {
+        cachedUserLists = { ...DEFAULT_USER_LISTS, ...(newValue as UserLists) };
+        void repaintAllBadges();
+      }
     });
 
     chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
@@ -199,7 +284,26 @@ export default defineBackground({
         sendResponse({ kind: 'tab_state', state });
         return true;
       }
-      // v0.1 stubs — full handlers land Days 5-6
+      if (message.kind === 'request_user_lists') {
+        sendResponse({ kind: 'user_lists', lists: cachedUserLists });
+        return true;
+      }
+      if (
+        message.kind === 'block_agent' ||
+        message.kind === 'block_issuer' ||
+        message.kind === 'block_domain' ||
+        message.kind === 'unblock_agent' ||
+        message.kind === 'unblock_issuer' ||
+        message.kind === 'whitelist_agent' ||
+        message.kind === 'whitelist_issuer' ||
+        message.kind === 'mark_as_own_agent' ||
+        message.kind === 'unmark_own_agent'
+      ) {
+        void applyListMutation(message).then((updated) => {
+          sendResponse({ kind: 'user_lists', lists: updated });
+        });
+        return true;
+      }
       return false;
     });
 
@@ -207,6 +311,52 @@ export default defineBackground({
       tabStates.delete(tabId);
       void persist();
     });
+
+    // ─── (2) Response header detection ───────────────────────────────
+    // chrome.webRequest.onHeadersReceived in observation-only mode (MV3-safe).
+    // Watches every response across <all_urls> for an AgentPKI-Token header
+    // and synthesizes an observation tied to the tab that initiated the
+    // request. Sub-resource responses (scripts, XHRs) are honored too — that's
+    // the most common shape, since the agent runs in JS and gets its passport
+    // via an authenticated XHR from its issuer.
+    chrome.webRequest.onHeadersReceived.addListener(
+      (details) => {
+        if (details.tabId < 0) return; // ignore service-worker-initiated requests
+        const headers = details.responseHeaders;
+        if (!headers) return;
+        let token: string | undefined;
+        for (const h of headers) {
+          if (h.name.toLowerCase() === 'agentpki-token' && h.value) {
+            // Allow either bare token or `Bearer v4.public.…`
+            const v = h.value.replace(/^Bearer\s+/i, '').trim();
+            if (v.startsWith('v4.public.')) {
+              token = v;
+              break;
+            }
+          }
+        }
+        if (!token) return;
+        const obs: AgentObservation = {
+          detected_at: Math.floor(Date.now() / 1000),
+          tab_id: details.tabId,
+          page_url: details.initiator || details.url,
+          vector: 'response_header',
+          token,
+          issuer_hint: safeHost(details.url),
+        };
+        void ingestObservation(details.tabId, obs);
+      },
+      { urls: ['<all_urls>'] },
+      ['responseHeaders'],
+    );
+
+    function safeHost(url: string): string | undefined {
+      try {
+        return new URL(url).host;
+      } catch {
+        return undefined;
+      }
+    }
 
     // Reset per-tab state on every page navigation (including refresh).
     // Without this, a verified badge from a previous page-load lingers when

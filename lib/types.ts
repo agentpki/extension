@@ -120,10 +120,18 @@ export type ExtensionMessage =
   | { kind: 'observation'; observation: AgentObservation }
   | { kind: 'request_tab_state'; tab_id: number }
   | { kind: 'tab_state'; state: TabState | null }
+  | { kind: 'request_user_lists' }
+  | { kind: 'user_lists'; lists: UserLists }
   | { kind: 'report_abuse'; report: AbuseReportPayload }
   | { kind: 'block_agent'; agent_id: string }
   | { kind: 'block_issuer'; issuer: string }
-  | { kind: 'whitelist_agent'; agent_id: string };
+  | { kind: 'block_domain'; domain: string }
+  | { kind: 'unblock_agent'; agent_id: string }
+  | { kind: 'unblock_issuer'; issuer: string }
+  | { kind: 'whitelist_agent'; agent_id: string }
+  | { kind: 'whitelist_issuer'; issuer: string }
+  | { kind: 'mark_as_own_agent'; agent_id: string }
+  | { kind: 'unmark_own_agent'; agent_id: string };
 
 /** Payload sent to /v1/abuse/report. */
 export interface AbuseReportPayload {

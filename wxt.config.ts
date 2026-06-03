@@ -21,8 +21,7 @@ export default defineConfig({
       'activeTab',
       'storage',
       'scripting',
-      'declarativeNetRequest',
-      'declarativeNetRequestFeedback',
+      'webRequest', // observation-only — needed for AgentPKI-Token response header detection
       'webNavigation', // for resetting tab state on page refresh / navigation
     ],
     host_permissions: ['<all_urls>'],
