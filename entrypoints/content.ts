@@ -57,6 +57,16 @@ export default defineContentScript({
         issuerHint: extractIssuerFromKid(detail.kid),
       });
     });
+
+    // Listen for MAIN-world library detection events (the injected script
+    // does the scan, dispatches the CustomEvent; we forward to background).
+    // This bridges the ISOLATED-world gap — content scripts can't see the
+    // page's window globals directly.
+    window.addEventListener('agentpki:libraries-detected', (ev) => {
+      const e = ev as CustomEvent<{ libraries: string[] }>;
+      const libs = e.detail?.libraries ?? [];
+      for (const lib of libs) sendObservation({ vector: 'js_library', library: lib });
+    });
   },
 });
 

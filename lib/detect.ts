@@ -88,6 +88,47 @@ const INJECT_SCRIPT_TEXT = `
       window.dispatchEvent(new CustomEvent('agentpki:outbound-signed', { detail }));
     } catch (e) { /* swallow */ }
   }
+
+  // ─── MAIN-world library detection ─────────────────────────────────
+  // Content scripts run in the ISOLATED world and can't see the page's
+  // window globals (like __LANGCHAIN__). This MAIN-world script does the
+  // check and dispatches a CustomEvent the ISOLATED-world content script
+  // listens for. Re-scans every 3 seconds for 30 seconds — same cadence
+  // as the ISOLATED-world fallback.
+  var KNOWN = [
+    { name: 'LangChain.js', keys: ['__LANGCHAIN__', 'langchain'] },
+    { name: 'Vercel AI SDK', keys: ['__VERCEL_AI_SDK__', 'aiStream'] },
+    { name: 'Anthropic SDK (JS)', keys: ['Anthropic', 'AnthropicVertex'] },
+    { name: 'OpenAI Agents JS', keys: ['__OPENAI_AGENTS__', 'OpenAIAgents'] },
+    { name: 'CrewAI JS', keys: ['__CREWAI__', 'CrewAI'] },
+    { name: 'Mastra', keys: ['__MASTRA__', 'Mastra'] },
+  ];
+  function notifyLibs(libs) {
+    if (!libs.length) return;
+    try {
+      window.dispatchEvent(new CustomEvent('agentpki:libraries-detected', { detail: { libraries: libs } }));
+    } catch (e) { /* swallow */ }
+  }
+  function scanLibs() {
+    var found = [];
+    for (var i = 0; i < KNOWN.length; i++) {
+      var lib = KNOWN[i];
+      for (var j = 0; j < lib.keys.length; j++) {
+        if (lib.keys[j] in window && window[lib.keys[j]] != null) {
+          found.push(lib.name);
+          break;
+        }
+      }
+    }
+    notifyLibs(found);
+  }
+  scanLibs();
+  var libScans = 0;
+  var libInterval = setInterval(function () {
+    libScans++;
+    if (libScans > 10) { clearInterval(libInterval); return; }
+    scanLibs();
+  }, 3000);
   function extractFromHeaders(headers) {
     if (!headers) return null;
     // Headers can be plain object, array of [k,v], or Headers instance.
