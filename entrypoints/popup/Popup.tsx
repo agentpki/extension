@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { TabState, UserLists } from '../../lib/types';
+import type { ReputationSummary, TabState, TrustedIssuer, UserLists } from '../../lib/types';
 import { DEFAULT_USER_LISTS } from '../../lib/storage';
 
 export function Popup() {
   const [state, setState] = useState<TabState | null>(null);
   const [lists, setLists] = useState<UserLists>(DEFAULT_USER_LISTS);
+  const [trustedIssuers, setTrustedIssuers] = useState<TrustedIssuer[]>([]);
+  const [reputation, setReputation] = useState<ReputationSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -16,16 +18,31 @@ export function Popup() {
         setLoading(false);
         return;
       }
-      const [tabRes, listsRes] = await Promise.all([
+      const [tabRes, listsRes, trustedRes] = await Promise.all([
         chrome.runtime.sendMessage({ kind: 'request_tab_state', tab_id: tab.id }) as Promise<
           { kind: 'tab_state'; state: TabState | null }
         >,
         chrome.runtime.sendMessage({ kind: 'request_user_lists' }) as Promise<
           { kind: 'user_lists'; lists: UserLists }
         >,
+        chrome.runtime.sendMessage({ kind: 'request_trusted_issuers' }) as Promise<
+          { kind: 'trusted_issuers'; issuers: TrustedIssuer[] }
+        >,
       ]);
-      setState(tabRes?.state ?? null);
+      const tabState = tabRes?.state ?? null;
+      setState(tabState);
       setLists(listsRes?.lists ?? DEFAULT_USER_LISTS);
+      setTrustedIssuers(trustedRes?.issuers ?? []);
+
+      // Reputation lookup — only if we have a verified passport with a jti
+      const jti = tabState?.verification?.passport?.jti;
+      if (jti) {
+        const repRes = (await chrome.runtime.sendMessage({
+          kind: 'request_reputation',
+          passport_id: jti,
+        })) as { kind: 'reputation'; summary: ReputationSummary | null };
+        setReputation(repRes?.summary ?? null);
+      }
     } catch (e) {
       console.warn('[AgentPKI popup] load failed', e);
     } finally {
@@ -63,21 +80,25 @@ export function Popup() {
         <TabStateView
           state={state}
           lists={lists}
+          trustedIssuers={trustedIssuers}
+          reputation={reputation}
           busy={busy}
           onAction={sendMessage}
         />
       )}
 
-      <footer className="mt-4 pt-3 border-t border-zinc-800 flex justify-between text-xs text-zinc-500">
+      <footer className="mt-4 pt-3 border-t border-zinc-800 flex justify-between items-center text-xs text-zinc-500">
         <a className="hover:text-zinc-300" href="https://agentpki.dev" target="_blank" rel="noreferrer">
           agentpki.dev
         </a>
-        <button
-          className="hover:text-zinc-300"
-          onClick={() => chrome.runtime.openOptionsPage()}
-        >
-          Settings ⚙
-        </button>
+        <div className="flex gap-3">
+          <button
+            className="hover:text-zinc-300"
+            onClick={() => chrome.runtime.openOptionsPage()}
+          >
+            Activity & Settings ⚙
+          </button>
+        </div>
       </footer>
     </div>
   );
@@ -109,11 +130,15 @@ function Empty() {
 function TabStateView({
   state,
   lists,
+  trustedIssuers,
+  reputation,
   busy,
   onAction,
 }: {
   state: TabState;
   lists: UserLists;
+  trustedIssuers: TrustedIssuer[];
+  reputation: ReputationSummary | null;
   busy: boolean;
   onAction: (msg: Record<string, unknown>) => Promise<void>;
 }) {
@@ -121,6 +146,8 @@ function TabStateView({
   const agentId = v?.passport?.agent_id;
   const issuer = v?.passport?.issuer;
 
+  const trustedEntry = issuer ? trustedIssuers.find((t) => t.issuer === issuer) : undefined;
+  const isTrustedIssuer = !!trustedEntry;
   const isBlocked = !!agentId && lists.blocked_agents.includes(agentId);
   const isOwn = !!agentId && lists.own_agents.includes(agentId);
   const isIssuerBlocked = !!issuer && lists.blocked_issuers.includes(issuer);
@@ -132,10 +159,22 @@ function TabStateView({
         {v?.passport && (
           <>
             <Field label="Issuer">
-              <code className="text-violet-300">{v.passport.issuer}</code>
-              {v.passport.issuer_name && (
-                <span className="text-zinc-400 ml-1">({v.passport.issuer_name})</span>
-              )}
+              <span className="inline-flex items-center gap-1.5 flex-wrap">
+                <code className="text-violet-300">{v.passport.issuer}</code>
+                {isTrustedIssuer && (
+                  <span
+                    className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-green-900/40 text-green-300 border border-green-800"
+                    title={trustedEntry?.note ?? 'On the AgentPKI verified-issuer list'}
+                  >
+                    ✓ Verified
+                  </span>
+                )}
+                {(trustedEntry?.name || v.passport.issuer_name) && (
+                  <span className="text-zinc-400 text-xs">
+                    ({trustedEntry?.name ?? v.passport.issuer_name})
+                  </span>
+                )}
+              </span>
             </Field>
             <Field label="Agent">
               <code className="text-zinc-200 text-xs break-all">{v.passport.agent_id}</code>
@@ -152,6 +191,22 @@ function TabStateView({
               <Field label="Abuse score">
                 <span className={v.abuse_score > 0.5 ? 'text-red-400' : 'text-zinc-300'}>
                   {v.abuse_score.toFixed(2)}
+                </span>
+              </Field>
+            )}
+            {reputation && reputation.data_available && (
+              <Field label="Reputation">
+                <span className="flex items-center gap-2 text-xs">
+                  <span className={reputationColor(reputation.reputation_score)}>
+                    {reputationLabel(reputation.reputation_score)}
+                  </span>
+                  <span className="text-zinc-500">
+                    · {reputation.abuse_reports_count} report
+                    {reputation.abuse_reports_count === 1 ? '' : 's'} filed
+                    {reputation.last_report_at && (
+                      <> (last {timeAgo(reputation.last_report_at)})</>
+                    )}
+                  </span>
                 </span>
               </Field>
             )}
@@ -266,6 +321,27 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="text-sm">{children}</span>
     </div>
   );
+}
+
+function reputationLabel(score: number): string {
+  if (score < 0.05) return 'Clean';
+  if (score < 0.2) return 'Mostly clean';
+  if (score < 0.4) return 'Some reports';
+  if (score < 0.7) return 'Many reports';
+  return 'High-confidence bad';
+}
+function reputationColor(score: number): string {
+  if (score < 0.2) return 'text-green-300';
+  if (score < 0.4) return 'text-amber-300';
+  if (score < 0.7) return 'text-orange-300';
+  return 'text-red-400';
+}
+function timeAgo(ts: number): string {
+  const diff = Math.floor(Date.now() / 1000) - ts;
+  if (diff < 60) return diff + 's ago';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
 }
 
 function BadgePill({ color }: { color: TabState['badge'] }) {

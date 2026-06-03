@@ -14,9 +14,10 @@
 // tab state from chrome.storage.session on event re-entry.
 
 import { defineBackground } from 'wxt/sandbox';
-import { verifyToken } from '../lib/verifier';
+import { verifyToken, fetchTrustedIssuers, fetchReputation } from '../lib/verifier';
 import {
   appendActivity,
+  getActivity,
   getSettings,
   getUserLists,
   setUserLists,
@@ -26,7 +27,9 @@ import type {
   AgentObservation,
   BadgeColor,
   ExtensionMessage,
+  ReputationSummary,
   TabState,
+  TrustedIssuer,
   UserLists,
   VerificationResult,
 } from '../lib/types';
@@ -76,6 +79,60 @@ const BADGE_PALETTE: Record<BadgeColor, { text: string; color: string; title: st
 // shot load; subsequent updates flow through the chrome.storage.onChanged
 // listener below.
 let cachedUserLists: UserLists = DEFAULT_USER_LISTS;
+
+// ─── Trusted-issuers cache (5 min in-memory)
+// ─── Reputation cache (per passport_id, 60 s in-memory)
+//
+// Both are pure caches over the verifier's public, edge-cached endpoints.
+// Local TTL is shorter than the edge TTL so the popup stays snappy + we
+// don't issue redundant requests on every popup open.
+
+interface TrustedIssuersCache {
+  issuers: TrustedIssuer[];
+  fetched_at: number;
+}
+let trustedIssuersCache: TrustedIssuersCache | null = null;
+const TRUSTED_ISSUERS_TTL_SEC = 300;
+
+interface ReputationCacheEntry {
+  summary: ReputationSummary;
+  fetched_at: number;
+}
+const reputationCache = new Map<string, ReputationCacheEntry>();
+const REPUTATION_TTL_SEC = 60;
+
+async function getTrustedIssuers(): Promise<TrustedIssuer[]> {
+  const now = Math.floor(Date.now() / 1000);
+  if (trustedIssuersCache && now - trustedIssuersCache.fetched_at < TRUSTED_ISSUERS_TTL_SEC) {
+    return trustedIssuersCache.issuers;
+  }
+  try {
+    const settings = await getSettings();
+    const issuers = await fetchTrustedIssuers({ base: settings.verifier_base });
+    trustedIssuersCache = { issuers, fetched_at: now };
+    return issuers;
+  } catch (e) {
+    console.warn('[AgentPKI] fetch trusted-issuers failed:', e);
+    return trustedIssuersCache?.issuers ?? [];
+  }
+}
+
+async function getReputation(passportId: string): Promise<ReputationSummary | null> {
+  const now = Math.floor(Date.now() / 1000);
+  const cached = reputationCache.get(passportId);
+  if (cached && now - cached.fetched_at < REPUTATION_TTL_SEC) {
+    return cached.summary;
+  }
+  try {
+    const settings = await getSettings();
+    const summary = await fetchReputation(passportId, { base: settings.verifier_base });
+    reputationCache.set(passportId, { summary, fetched_at: now });
+    return summary;
+  } catch (e) {
+    console.warn('[AgentPKI] fetch reputation failed:', e);
+    return cached?.summary ?? null;
+  }
+}
 
 function deriveBadge(st: TabState): BadgeColor {
   const v = st.verification;
@@ -286,6 +343,24 @@ export default defineBackground({
       }
       if (message.kind === 'request_user_lists') {
         sendResponse({ kind: 'user_lists', lists: cachedUserLists });
+        return true;
+      }
+      if (message.kind === 'request_trusted_issuers') {
+        void getTrustedIssuers().then((issuers) => {
+          sendResponse({ kind: 'trusted_issuers', issuers });
+        });
+        return true;
+      }
+      if (message.kind === 'request_reputation') {
+        void getReputation(message.passport_id).then((summary) => {
+          sendResponse({ kind: 'reputation', summary });
+        });
+        return true;
+      }
+      if (message.kind === 'request_activity') {
+        void getActivity().then((entries) => {
+          sendResponse({ kind: 'activity', entries });
+        });
         return true;
       }
       if (

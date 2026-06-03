@@ -122,6 +122,12 @@ export type ExtensionMessage =
   | { kind: 'tab_state'; state: TabState | null }
   | { kind: 'request_user_lists' }
   | { kind: 'user_lists'; lists: UserLists }
+  | { kind: 'request_trusted_issuers' }
+  | { kind: 'trusted_issuers'; issuers: TrustedIssuer[] }
+  | { kind: 'request_reputation'; passport_id: string }
+  | { kind: 'reputation'; summary: ReputationSummary | null }
+  | { kind: 'request_activity' }
+  | { kind: 'activity'; entries: ActivityLogEntry[] }
   | { kind: 'report_abuse'; report: AbuseReportPayload }
   | { kind: 'block_agent'; agent_id: string }
   | { kind: 'block_issuer'; issuer: string }
