@@ -15,8 +15,10 @@ export default defineConfig({
   manifest: ({ browser }) => ({
     name: 'AgentPKI',
     short_name: 'AgentPKI',
+    // Chrome Web Store enforces a 132-char hard limit on this field. Keep
+    // any future edits short — count chars before pushing.
     description:
-      'AI Agent Verification. Detects AI agents on any webpage, verifies their cryptographic identity against the AgentPKI standard, surfaces a trust badge.',
+      'The HTTPS padlock for AI agents in your browser. Tells you if the agent on this page is verified, unverified, or revoked.',
     permissions: [
       'activeTab',
       'storage',
