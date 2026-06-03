@@ -123,12 +123,11 @@ const INJECT_SCRIPT_TEXT = `
     notifyLibs(found);
   }
   scanLibs();
-  var libScans = 0;
-  var libInterval = setInterval(function () {
-    libScans++;
-    if (libScans > 10) { clearInterval(libInterval); return; }
-    scanLibs();
-  }, 3000);
+  // Run forever (well, for the page's lifetime). Real agent libraries are
+  // commonly mounted lazily after user interaction (e.g. opening a chat
+  // widget), and during dev/testing the user may set window globals at
+  // arbitrary times. Cost is one cheap object-key check every 2 seconds.
+  setInterval(scanLibs, 2000);
   function extractFromHeaders(headers) {
     if (!headers) return null;
     // Headers can be plain object, array of [k,v], or Headers instance.
