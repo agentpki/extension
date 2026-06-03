@@ -138,7 +138,12 @@ export type ExtensionMessage =
   | { kind: 'whitelist_agent'; agent_id: string }
   | { kind: 'whitelist_issuer'; issuer: string }
   | { kind: 'mark_as_own_agent'; agent_id: string }
-  | { kind: 'unmark_own_agent'; agent_id: string };
+  | { kind: 'unmark_own_agent'; agent_id: string }
+  | { kind: 'request_settings' }
+  | { kind: 'settings'; settings: Settings }
+  | { kind: 'update_settings'; settings: Partial<Settings> }
+  | { kind: 'clear_all_data' }
+  | { kind: 'clear_all_data_result'; cleared: boolean };
 
 /** Payload sent to /v1/abuse/report. */
 export interface AbuseReportPayload {

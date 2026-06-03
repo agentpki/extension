@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AbuseReportPayload,
   ReputationSummary,
@@ -98,10 +98,17 @@ export function Popup() {
           setReputation(repRes?.summary ?? null);
         }
       } else {
-        setToast({
-          kind: 'err',
-          text: 'Report failed: ' + (res?.error ?? 'unknown error'),
-        });
+        // Friendly mapping for the most common verifier error shapes.
+        const raw = res?.error ?? 'unknown error';
+        let friendly = raw;
+        if (/429|rate/i.test(raw)) {
+          friendly = 'Too many reports — please wait a few minutes and try again.';
+        } else if (/network|failed to fetch|cors/i.test(raw)) {
+          friendly = "Couldn't reach verify.agentpki.dev. Check your connection.";
+        } else if (/invalid_report/i.test(raw)) {
+          friendly = 'Report rejected by verifier — try a longer description.';
+        }
+        setToast({ kind: 'err', text: 'Report failed: ' + friendly });
       }
     } finally {
       setBusy(false);
@@ -505,6 +512,24 @@ function ReportAbuseModal({
   const [severity, setSeverity] = useState<AbuseReportPayload['severity']>('medium');
   const [description, setDescription] = useState('');
   const [includePageUrl, setIncludePageUrl] = useState(true);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Autofocus description on open so the user can start typing immediately
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  // ESC to close (unless we're mid-submit)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [busy, onClose]);
 
   const canSubmit = description.trim().length >= 10 && !busy;
 
@@ -522,13 +547,18 @@ function ReportAbuseModal({
   };
 
   return (
-    <div className="absolute inset-0 bg-zinc-950/95 backdrop-blur z-10 flex flex-col p-4 overflow-y-auto">
+    <div
+      className="absolute inset-0 bg-zinc-950/95 backdrop-blur z-10 flex flex-col p-4 overflow-y-auto"
+      role="dialog"
+      aria-label="Report abuse"
+    >
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-semibold text-sm">Report abuse</h2>
         <button
           className="text-zinc-500 hover:text-zinc-200 text-xs"
           onClick={onClose}
           disabled={busy}
+          title="Press Esc to close"
         >
           ✕ Close
         </button>
@@ -576,7 +606,8 @@ function ReportAbuseModal({
           What happened? <span className="text-zinc-600">(min 10 chars)</span>
         </span>
         <textarea
-          className="mt-1 w-full bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-200 px-2 py-1.5 h-20 resize-none"
+          ref={textareaRef}
+          className="mt-1 w-full bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-200 px-2 py-1.5 h-20 resize-none focus:outline-none focus:border-violet-700"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="One or two sentences. What did the agent do that warrants a report?"

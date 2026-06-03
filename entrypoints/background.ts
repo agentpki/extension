@@ -25,6 +25,7 @@ import {
   getActivity,
   getInstallationId,
   getSettings,
+  setSettings,
   getUserLists,
   setUserLists,
   DEFAULT_USER_LISTS,
@@ -34,6 +35,7 @@ import type {
   BadgeColor,
   ExtensionMessage,
   ReputationSummary,
+  Settings,
   TabState,
   TrustedIssuer,
   UserLists,
@@ -367,6 +369,49 @@ export default defineBackground({
         void getReputation(message.passport_id, { fresh: message.fresh }).then((summary) => {
           sendResponse({ kind: 'reputation', summary });
         });
+        return true;
+      }
+      if (message.kind === 'request_settings') {
+        void getSettings().then((settings) => {
+          sendResponse({ kind: 'settings', settings });
+        });
+        return true;
+      }
+      if (message.kind === 'update_settings') {
+        void (async () => {
+          const current = await getSettings();
+          // Anonymous telemetry is permanently disabled in v0.1 — the field
+          // exists in the schema so v0.2+ can flip it, but the popup UI
+          // grays the toggle out and the SW refuses to flip it true.
+          const sanitized: Partial<Settings> = {
+            ...message.settings,
+            anonymous_telemetry: false,
+          };
+          const merged: Settings = { ...current, ...sanitized };
+          await setSettings(merged);
+          sendResponse({ kind: 'settings', settings: merged });
+        })();
+        return true;
+      }
+      if (message.kind === 'clear_all_data') {
+        void (async () => {
+          try {
+            await chrome.storage.sync.clear();
+            await chrome.storage.local.clear();
+            await chrome.storage.session.clear();
+            // Reset in-memory state
+            cachedUserLists = DEFAULT_USER_LISTS;
+            tabStates.clear();
+            trustedIssuersCache = null;
+            reputationCache.clear();
+            // Re-seed install UUID so abuse reports still work post-clear
+            await getInstallationId();
+            sendResponse({ kind: 'clear_all_data_result', cleared: true });
+          } catch (e) {
+            console.warn('[AgentPKI] clear_all_data failed:', e);
+            sendResponse({ kind: 'clear_all_data_result', cleared: false });
+          }
+        })();
         return true;
       }
       if (message.kind === 'request_activity') {
