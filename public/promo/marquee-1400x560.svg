@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 560" width="1400" height="560">
+  <!-- Chrome Web Store marquee promo tile — 1400x560, OPTIONAL but
+       boosts visibility on the homepage carousel. Three-panel story:
+       agent detected → verified → reported. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1e1b2e"/>
+      <stop offset="100%" stop-color="#0c0a14"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#7c3aed" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1400" height="560" fill="url(#bg)"/>
+  <circle cx="700" cy="280" r="500" fill="url(#glow)"/>
+
+  <!-- Header strip -->
+  <g transform="translate(80, 60)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <!-- Mini shield -->
+    <g transform="translate(0, -8)">
+      <path d="M18 0 L36 5 L36 20 C36 30 28 38 18 40 C8 38 0 30 0 20 L0 5 Z" fill="#7c3aed"/>
+      <path d="M9 30 L18 10 L27 30 L24 30 L22 25 L14 25 L12 30 Z" fill="#ffffff"/>
+    </g>
+    <text x="50" y="22" font-size="22" font-weight="700" fill="#ffffff" letter-spacing="-0.5">
+      AgentPKI
+    </text>
+    <text x="160" y="22" font-size="16" fill="#a78bfa">
+      The HTTPS padlock for AI agents
+    </text>
+  </g>
+
+  <!-- Three panels -->
+  <g transform="translate(80, 160)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+
+    <!-- Panel 1: Yellow / agent detected -->
+    <g transform="translate(0, 0)">
+      <rect width="380" height="320" rx="12" fill="#18171f" stroke="#27262e" stroke-width="1"/>
+      <g transform="translate(190, 90)">
+        <circle cx="0" cy="0" r="60" fill="#451a03"/>
+        <text x="0" y="14" font-size="48" fill="#fbbf24" text-anchor="middle" font-weight="700">!</text>
+      </g>
+      <text x="190" y="200" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">
+        An agent is here
+      </text>
+      <text x="190" y="232" font-size="14" fill="#a1a1aa" text-anchor="middle">
+        Unverified — no passport
+      </text>
+      <text x="190" y="280" font-size="13" font-family="ui-monospace, monospace" fill="#71717a" text-anchor="middle">
+        window.__LANGCHAIN__ detected
+      </text>
+    </g>
+
+    <!-- Arrow 1 → 2 -->
+    <g transform="translate(415, 158)">
+      <path d="M0 0 L25 0 M20 -5 L25 0 L20 5" stroke="#52525b" stroke-width="1.5" fill="none"/>
+    </g>
+
+    <!-- Panel 2: Green / verified -->
+    <g transform="translate(450, 0)">
+      <rect width="380" height="320" rx="12" fill="#18171f" stroke="#27262e" stroke-width="1"/>
+      <g transform="translate(190, 90)">
+        <circle cx="0" cy="0" r="60" fill="#052e16"/>
+        <text x="0" y="14" font-size="48" fill="#22c55e" text-anchor="middle" font-weight="700">✓</text>
+      </g>
+      <text x="190" y="200" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">
+        It's verified
+      </text>
+      <text x="190" y="232" font-size="14" fill="#a1a1aa" text-anchor="middle">
+        Cryptographic passport checked
+      </text>
+      <text x="190" y="280" font-size="13" font-family="ui-monospace, monospace" fill="#71717a" text-anchor="middle">
+        anthropic.com · scopes: chat, web
+      </text>
+    </g>
+
+    <!-- Arrow 2 → 3 -->
+    <g transform="translate(865, 158)">
+      <path d="M0 0 L25 0 M20 -5 L25 0 L20 5" stroke="#52525b" stroke-width="1.5" fill="none"/>
+    </g>
+
+    <!-- Panel 3: Red / reported -->
+    <g transform="translate(900, 0)">
+      <rect width="380" height="320" rx="12" fill="#18171f" stroke="#27262e" stroke-width="1"/>
+      <g transform="translate(190, 90)">
+        <circle cx="0" cy="0" r="60" fill="#450a0a"/>
+        <text x="0" y="14" font-size="48" fill="#ef4444" text-anchor="middle" font-weight="700">⛔</text>
+      </g>
+      <text x="190" y="200" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">
+        It's been reported
+      </text>
+      <text x="190" y="232" font-size="14" fill="#a1a1aa" text-anchor="middle">
+        Revoked or high-abuse — close the tab
+      </text>
+      <text x="190" y="280" font-size="13" font-family="ui-monospace, monospace" fill="#71717a" text-anchor="middle">
+        4 reports filed · score 0.78
+      </text>
+    </g>
+  </g>
+
+  <!-- Footer strip -->
+  <g transform="translate(700, 525)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" text-anchor="middle">
+    <text font-size="13" fill="#a78bfa">
+      Free · Open source · Zero telemetry · agentpki.dev
+    </text>
+  </g>
+</svg>
