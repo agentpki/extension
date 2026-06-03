@@ -12,8 +12,6 @@
 import { defineContentScript } from 'wxt/sandbox';
 import {
   detectMetaTag,
-  detectLibraries,
-  injectOutboundInterceptor,
   makeObservation,
 } from '../lib/detect';
 import type { ExtensionMessage } from '../lib/types';
@@ -22,6 +20,7 @@ export default defineContentScript({
   matches: ['<all_urls>'],
   runAt: 'document_idle',
   main() {
+    console.log('[AgentPKI] ISOLATED-world content script active.');
     runDetectionSweep();
     // Re-scan on SPA navigations / lazy-mounted agent libs
     const mo = new MutationObserver(() => {
@@ -29,19 +28,10 @@ export default defineContentScript({
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
 
-    // Periodic library re-scan (window properties don't fire DOM mutations,
-    // and many agent SDKs lazily install their globals after `load`). Fires
-    // every 3 seconds for the first 30 seconds, then stops. Cheap and bounded.
-    let scans = 0;
-    const libInterval = window.setInterval(() => {
-      scans++;
-      if (scans > 10) {
-        clearInterval(libInterval);
-        return;
-      }
-      const libs = detectLibraries(window);
-      for (const lib of libs) sendObservation({ vector: 'js_library', library: lib });
-    }, 3000);
+    // (Library scanning is now done by the MAIN-world content script —
+    // entrypoints/main-world.content.ts — which has access to the page's
+    // actual window globals. ISOLATED world here only listens for the
+    // dispatched CustomEvent and forwards to the background SW.)
 
     // Listen for outbound RFC 9421 events from the injected interceptor
     window.addEventListener('agentpki:outbound-signed', (ev) => {
@@ -82,27 +72,15 @@ function scheduleMetaResweep() {
 }
 
 function runDetectionSweep() {
-  const pageUrl = location.href;
-
-  // (1) meta tag
+  // (1) meta tag — ISOLATED world can see the DOM
   const token = detectMetaTag(document);
   if (token) sendObservation({ vector: 'meta_tag', token });
 
-  // (3) JS library globals
-  const libs = detectLibraries(window);
-  for (const lib of libs) sendObservation({ vector: 'js_library', library: lib });
-
-  // (4) outbound RFC 9421 — inject the interceptor so we catch future fetches
-  try {
-    injectOutboundInterceptor(document);
-  } catch (e) {
-    // CSP blocked the inline script. (2)/(1)/(3) still work — we accept this.
-    console.debug('[AgentPKI] outbound interceptor injection blocked:', e);
-  }
-
-  // (2) response headers are handled in the background SW via
-  //     declarativeNetRequest — content script doesn't touch that path.
-  void pageUrl;
+  // (3) JS library globals — handled by the MAIN-world content script
+  //     (main-world.content.ts). It dispatches CustomEvents we listen for above.
+  // (4) outbound RFC 9421 — also handled by main-world.content.ts. It
+  //     monkey-patches fetch + XMLHttpRequest in the page's actual JS context.
+  // (2) response headers — handled by background SW via declarativeNetRequest.
 }
 
 function sendObservation(args: {

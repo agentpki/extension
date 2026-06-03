@@ -68,121 +68,14 @@ export function detectLibraries(win: Window): string[] {
 
 // ─── (4) RFC 9421 outbound signature interception ──────────────────────
 //
-// We inject a small MAIN-world script that monkey-patches window.fetch and
-// XMLHttpRequest.prototype.send. When the page attaches a `Signature-Input`
-// header containing `keyid="agentpki:..."`, the patched fetch posts a
-// CustomEvent('agentpki:outbound-signed', { detail: { kid, signature_input } })
-// back to the page DOM, which the content script (ISOLATED world) listens
-// for and forwards to the background SW.
-//
-// Pages with strict CSP that blocks inline scripts won't see this vector
-// fire. That's an accepted limitation in v0.1 — we still get vectors (1)
-// (2) (3) on those pages. Documented in the v0.1 README.
+// Now handled by entrypoints/main-world.content.ts (manifest-declared
+// world: MAIN content script) — bypasses page CSP entirely. The old
+// inline <script>-injection approach this file previously contained
+// was unreliable on certain Chrome / CSP combinations.
 
-const INJECT_SCRIPT_TEXT = `
-(function () {
-  if (window.__agentpki_outbound_patched__) return;
-  window.__agentpki_outbound_patched__ = true;
-  function notify(detail) {
-    try {
-      window.dispatchEvent(new CustomEvent('agentpki:outbound-signed', { detail }));
-    } catch (e) { /* swallow */ }
-  }
-
-  // ─── MAIN-world library detection ─────────────────────────────────
-  // Content scripts run in the ISOLATED world and can't see the page's
-  // window globals (like __LANGCHAIN__). This MAIN-world script does the
-  // check and dispatches a CustomEvent the ISOLATED-world content script
-  // listens for. Re-scans every 3 seconds for 30 seconds — same cadence
-  // as the ISOLATED-world fallback.
-  var KNOWN = [
-    { name: 'LangChain.js', keys: ['__LANGCHAIN__', 'langchain'] },
-    { name: 'Vercel AI SDK', keys: ['__VERCEL_AI_SDK__', 'aiStream'] },
-    { name: 'Anthropic SDK (JS)', keys: ['Anthropic', 'AnthropicVertex'] },
-    { name: 'OpenAI Agents JS', keys: ['__OPENAI_AGENTS__', 'OpenAIAgents'] },
-    { name: 'CrewAI JS', keys: ['__CREWAI__', 'CrewAI'] },
-    { name: 'Mastra', keys: ['__MASTRA__', 'Mastra'] },
-  ];
-  function notifyLibs(libs) {
-    if (!libs.length) return;
-    try {
-      window.dispatchEvent(new CustomEvent('agentpki:libraries-detected', { detail: { libraries: libs } }));
-    } catch (e) { /* swallow */ }
-  }
-  function scanLibs() {
-    var found = [];
-    for (var i = 0; i < KNOWN.length; i++) {
-      var lib = KNOWN[i];
-      for (var j = 0; j < lib.keys.length; j++) {
-        if (lib.keys[j] in window && window[lib.keys[j]] != null) {
-          found.push(lib.name);
-          break;
-        }
-      }
-    }
-    // Dev-mode visibility — change detection appears in the page console
-    try { console.log('[AgentPKI] lib scan:', found); } catch (e) { /* swallow */ }
-    notifyLibs(found);
-  }
-  console.log('[AgentPKI] MAIN-world script active. Library scan running every 2s.');
-  scanLibs();
-  // Run forever (well, for the page's lifetime). Real agent libraries are
-  // commonly mounted lazily after user interaction (e.g. opening a chat
-  // widget), and during dev/testing the user may set window globals at
-  // arbitrary times. Cost is one cheap object-key check every 2 seconds.
-  setInterval(scanLibs, 2000);
-  function extractFromHeaders(headers) {
-    if (!headers) return null;
-    // Headers can be plain object, array of [k,v], or Headers instance.
-    var sigInput = null;
-    if (typeof headers.get === 'function') {
-      sigInput = headers.get('Signature-Input') || headers.get('signature-input');
-    } else if (Array.isArray(headers)) {
-      for (var i = 0; i < headers.length; i++) {
-        var p = headers[i];
-        if (p && (p[0] === 'Signature-Input' || p[0] === 'signature-input')) sigInput = p[1];
-      }
-    } else if (typeof headers === 'object') {
-      sigInput = headers['Signature-Input'] || headers['signature-input'];
-    }
-    if (!sigInput) return null;
-    var m = String(sigInput).match(/keyid=\\"([^\\"]+)\\"/);
-    return m ? { kid: m[1], signature_input: String(sigInput) } : null;
-  }
-  var origFetch = window.fetch;
-  if (origFetch) {
-    window.fetch = function (input, init) {
-      try {
-        var headers = (init && init.headers) || (input && input.headers);
-        var hit = extractFromHeaders(headers);
-        if (hit) notify(hit);
-      } catch (e) { /* swallow */ }
-      return origFetch.apply(this, arguments);
-    };
-  }
-  var origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
-  XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
-    try {
-      if (String(name).toLowerCase() === 'signature-input') {
-        var m = String(value).match(/keyid=\\"([^\\"]+)\\"/);
-        if (m) notify({ kid: m[1], signature_input: String(value) });
-      }
-    } catch (e) { /* swallow */ }
-    return origSetHeader.apply(this, arguments);
-  };
-})();
-`;
-
-export function injectOutboundInterceptor(doc: Document): void {
-  // Inject only once
-  if (doc.getElementById('agentpki-outbound-interceptor')) return;
-  const s = doc.createElement('script');
-  s.id = 'agentpki-outbound-interceptor';
-  s.textContent = INJECT_SCRIPT_TEXT;
-  (doc.head || doc.documentElement).appendChild(s);
-  // Remove the script node from the DOM (logic persists in the page)
-  s.remove();
-}
+// (Old inline-script injection removed. Replaced by the manifest-declared
+// MAIN-world content script at entrypoints/main-world.content.ts which
+// runs at document_start with world: 'MAIN' — bypasses page CSP entirely.)
 
 // ─── Observation factory ──────────────────────────────────────────────
 
