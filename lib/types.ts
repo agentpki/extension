@@ -124,7 +124,7 @@ export type ExtensionMessage =
   | { kind: 'user_lists'; lists: UserLists }
   | { kind: 'request_trusted_issuers' }
   | { kind: 'trusted_issuers'; issuers: TrustedIssuer[] }
-  | { kind: 'request_reputation'; passport_id: string }
+  | { kind: 'request_reputation'; passport_id: string; fresh?: boolean }
   | { kind: 'reputation'; summary: ReputationSummary | null }
   | { kind: 'request_activity' }
   | { kind: 'activity'; entries: ActivityLogEntry[] }

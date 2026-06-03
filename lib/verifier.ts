@@ -48,17 +48,25 @@ export async function fetchTrustedIssuers(opts?: {
   return body.issuers ?? [];
 }
 
-/** GET /v1/passport/:id/reputation */
+/** GET /v1/passport/:id/reputation
+ *
+ *  Pass `fresh: true` to bypass the verifier's 60s edge cache. Use this after
+ *  the local user has just filed a report so the popup reflects the increment
+ *  immediately instead of waiting up to a minute for cache expiry. */
 export async function fetchReputation(
   passportId: string,
-  opts?: { base?: string; signal?: AbortSignal },
+  opts?: { base?: string; signal?: AbortSignal; fresh?: boolean },
 ): Promise<ReputationSummary> {
   const url =
     verifierBase(opts?.base) +
     '/v1/passport/' +
     encodeURIComponent(passportId) +
-    '/reputation';
-  const res = await fetch(url, { signal: opts?.signal });
+    '/reputation' +
+    (opts?.fresh ? '?fresh=1' : '');
+  const res = await fetch(url, {
+    signal: opts?.signal,
+    cache: opts?.fresh ? 'no-store' : 'default',
+  });
   if (!res.ok) throw new Error(`reputation fetch failed: HTTP ${res.status}`);
   return (await res.json()) as ReputationSummary;
 }

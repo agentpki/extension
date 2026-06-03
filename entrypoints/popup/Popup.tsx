@@ -86,12 +86,14 @@ export function Popup() {
       if (res?.accepted) {
         setToast({ kind: 'ok', text: 'Report submitted. Thanks.' });
         setReportOpen(false);
-        // Re-fetch reputation so the count visibly increments
+        // Re-fetch reputation with `fresh:true` so we bypass the verifier's
+        // 60s edge cache and the popup count increments immediately.
         const jti = state?.verification?.passport?.jti;
         if (jti) {
           const repRes = (await chrome.runtime.sendMessage({
             kind: 'request_reputation',
             passport_id: jti,
+            fresh: true,
           })) as { kind: 'reputation'; summary: ReputationSummary | null };
           setReputation(repRes?.summary ?? null);
         }

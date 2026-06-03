@@ -123,15 +123,21 @@ async function getTrustedIssuers(): Promise<TrustedIssuer[]> {
   }
 }
 
-async function getReputation(passportId: string): Promise<ReputationSummary | null> {
+async function getReputation(
+  passportId: string,
+  opts?: { fresh?: boolean },
+): Promise<ReputationSummary | null> {
   const now = Math.floor(Date.now() / 1000);
   const cached = reputationCache.get(passportId);
-  if (cached && now - cached.fetched_at < REPUTATION_TTL_SEC) {
+  if (!opts?.fresh && cached && now - cached.fetched_at < REPUTATION_TTL_SEC) {
     return cached.summary;
   }
   try {
     const settings = await getSettings();
-    const summary = await fetchReputation(passportId, { base: settings.verifier_base });
+    const summary = await fetchReputation(passportId, {
+      base: settings.verifier_base,
+      fresh: opts?.fresh,
+    });
     reputationCache.set(passportId, { summary, fetched_at: now });
     return summary;
   } catch (e) {
@@ -358,7 +364,7 @@ export default defineBackground({
         return true;
       }
       if (message.kind === 'request_reputation') {
-        void getReputation(message.passport_id).then((summary) => {
+        void getReputation(message.passport_id, { fresh: message.fresh }).then((summary) => {
           sendResponse({ kind: 'reputation', summary });
         });
         return true;
