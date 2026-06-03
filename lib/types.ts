@@ -128,7 +128,8 @@ export type ExtensionMessage =
   | { kind: 'reputation'; summary: ReputationSummary | null }
   | { kind: 'request_activity' }
   | { kind: 'activity'; entries: ActivityLogEntry[] }
-  | { kind: 'report_abuse'; report: AbuseReportPayload }
+  | { kind: 'report_abuse'; report: Omit<AbuseReportPayload, 'reporter' | 'reporter_kind' | 'v'> }
+  | { kind: 'abuse_report_result'; accepted: boolean; report_id?: string; error?: string }
   | { kind: 'block_agent'; agent_id: string }
   | { kind: 'block_issuer'; issuer: string }
   | { kind: 'block_domain'; domain: string }

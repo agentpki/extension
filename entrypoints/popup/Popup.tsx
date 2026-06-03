@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ReputationSummary, TabState, TrustedIssuer, UserLists } from '../../lib/types';
+import type {
+  AbuseReportPayload,
+  ReputationSummary,
+  TabState,
+  TrustedIssuer,
+  UserLists,
+} from '../../lib/types';
 import { DEFAULT_USER_LISTS } from '../../lib/storage';
 
 export function Popup() {
@@ -8,7 +14,10 @@ export function Popup() {
   const [trustedIssuers, setTrustedIssuers] = useState<TrustedIssuer[]>([]);
   const [reputation, setReputation] = useState<ReputationSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -45,12 +54,15 @@ export function Popup() {
       }
     } catch (e) {
       console.warn('[AgentPKI popup] load failed', e);
+      setLoadError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const sendMessage = async (msg: Record<string, unknown>) => {
     setBusy(true);
@@ -62,8 +74,42 @@ export function Popup() {
     }
   };
 
+  const submitReport = async (
+    report: Omit<AbuseReportPayload, 'reporter' | 'reporter_kind' | 'v'>,
+  ) => {
+    setBusy(true);
+    try {
+      const res = (await chrome.runtime.sendMessage({
+        kind: 'report_abuse',
+        report,
+      })) as { kind: 'abuse_report_result'; accepted: boolean; report_id?: string; error?: string };
+      if (res?.accepted) {
+        setToast({ kind: 'ok', text: 'Report submitted. Thanks.' });
+        setReportOpen(false);
+        // Re-fetch reputation so the count visibly increments
+        const jti = state?.verification?.passport?.jti;
+        if (jti) {
+          const repRes = (await chrome.runtime.sendMessage({
+            kind: 'request_reputation',
+            passport_id: jti,
+          })) as { kind: 'reputation'; summary: ReputationSummary | null };
+          setReputation(repRes?.summary ?? null);
+        }
+      } else {
+        setToast({
+          kind: 'err',
+          text: 'Report failed: ' + (res?.error ?? 'unknown error'),
+        });
+      }
+    } finally {
+      setBusy(false);
+      // Auto-dismiss after 4s
+      setTimeout(() => setToast(null), 4000);
+    }
+  };
+
   return (
-    <div className="w-[380px] min-h-[200px] p-4 bg-zinc-950 text-zinc-100 font-sans">
+    <div className="w-[380px] min-h-[200px] p-4 bg-zinc-950 text-zinc-100 font-sans relative">
       <header className="flex items-center gap-2 mb-3">
         <span className="inline-block w-2 h-2 rounded-full bg-violet-400" />
         <span className="font-semibold tracking-tight">AgentPKI</span>
@@ -72,11 +118,19 @@ export function Popup() {
 
       {loading && <Skeleton />}
 
-      {!loading && !state && (
-        <Empty />
+      {!loading && loadError && (
+        <div className="text-sm text-amber-300 bg-amber-950/40 border border-amber-900 rounded p-3">
+          <p className="font-medium mb-1">Couldn't reach the background worker.</p>
+          <p className="text-xs text-amber-200/80">{loadError}</p>
+          <p className="text-xs mt-2 text-zinc-400">
+            Try reloading the extension at <code>chrome://extensions</code>.
+          </p>
+        </div>
       )}
 
-      {!loading && state && (
+      {!loading && !loadError && !state && <Empty />}
+
+      {!loading && !loadError && state && (
         <TabStateView
           state={state}
           lists={lists}
@@ -84,7 +138,32 @@ export function Popup() {
           reputation={reputation}
           busy={busy}
           onAction={sendMessage}
+          onOpenReport={() => setReportOpen(true)}
         />
+      )}
+
+      {reportOpen && state?.verification?.passport && (
+        <ReportAbuseModal
+          passportJti={state.verification.passport.jti}
+          agentId={state.verification.passport.agent_id}
+          issuer={state.verification.passport.issuer}
+          pageUrl={state.page_url}
+          busy={busy}
+          onClose={() => setReportOpen(false)}
+          onSubmit={submitReport}
+        />
+      )}
+
+      {toast && (
+        <div
+          className={`absolute left-4 right-4 bottom-4 px-3 py-2 rounded text-xs font-medium shadow-lg ${
+            toast.kind === 'ok'
+              ? 'bg-green-900/80 text-green-200 border border-green-800'
+              : 'bg-red-900/80 text-red-200 border border-red-800'
+          }`}
+        >
+          {toast.text}
+        </div>
       )}
 
       <footer className="mt-4 pt-3 border-t border-zinc-800 flex justify-between items-center text-xs text-zinc-500">
@@ -134,6 +213,7 @@ function TabStateView({
   reputation,
   busy,
   onAction,
+  onOpenReport,
 }: {
   state: TabState;
   lists: UserLists;
@@ -141,6 +221,7 @@ function TabStateView({
   reputation: ReputationSummary | null;
   busy: boolean;
   onAction: (msg: Record<string, unknown>) => Promise<void>;
+  onOpenReport: () => void;
 }) {
   const v = state.verification;
   const agentId = v?.passport?.agent_id;
@@ -151,10 +232,17 @@ function TabStateView({
   const isBlocked = !!agentId && lists.blocked_agents.includes(agentId);
   const isOwn = !!agentId && lists.own_agents.includes(agentId);
   const isIssuerBlocked = !!issuer && lists.blocked_issuers.includes(issuer);
+  // Show "verifying…" hint when we have observations but no verify result yet
+  const verifyingPending = !v && state.observations.some((o) => o.token);
 
   return (
     <div className="text-sm">
       <BadgePill color={state.badge} />
+      {verifyingPending && (
+        <p className="text-xs text-zinc-500 mt-2 animate-pulse">
+          Verifying token with verify.agentpki.dev…
+        </p>
+      )}
       <div className="mt-3 space-y-2">
         {v?.passport && (
           <>
@@ -217,7 +305,7 @@ function TabStateView({
             )}
           </>
         )}
-        {!v && state.observations.length > 0 && (
+        {!v && state.observations.length > 0 && !verifyingPending && (
           <p className="text-xs text-zinc-400">
             Detected {state.observations.length} signal
             {state.observations.length === 1 ? '' : 's'} on this page (
@@ -281,6 +369,15 @@ function TabStateView({
               onClick={() => onAction({ kind: 'unmark_own_agent', agent_id: agentId })}
             >
               ↺ Not my agent
+            </ActionBtn>
+          )}
+          {v?.passport && !isOwn && (
+            <ActionBtn
+              variant="danger"
+              disabled={busy}
+              onClick={onOpenReport}
+            >
+              🚩 Report abuse
             </ActionBtn>
           )}
         </div>
@@ -357,6 +454,175 @@ function BadgePill({ color }: { color: TabState['badge'] }) {
   return (
     <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-md ${s.bg} ${s.text} font-mono text-sm`}>
       {s.label}
+    </div>
+  );
+}
+
+// ─── Report-abuse modal ────────────────────────────────────────────────
+// User picks a category + severity + writes a short description. The
+// modal sends a `report_abuse` message to background, which fills in the
+// install UUID and reporter_kind:'extension' and POSTs to the verifier.
+
+const CATEGORIES: Array<{ value: AbuseReportPayload['category']; label: string }> = [
+  { value: 'impersonation', label: 'Impersonating a brand or person' },
+  { value: 'fraud', label: 'Fraud / phishing / scam' },
+  { value: 'harm', label: 'Harmful or unsafe behaviour' },
+  { value: 'scope-violation', label: 'Acting outside its declared scopes' },
+  { value: 'rate-abuse', label: 'Rate abuse / scraping' },
+  { value: 'spam', label: 'Spam' },
+  { value: 'other', label: 'Other' },
+];
+
+const SEVERITIES: Array<{ value: AbuseReportPayload['severity']; label: string }> = [
+  { value: 'low', label: 'Low — annoyance' },
+  { value: 'medium', label: 'Medium — meaningful harm' },
+  { value: 'high', label: 'High — material damage' },
+  { value: 'critical', label: 'Critical — fraud, safety, large-scale' },
+];
+
+function ReportAbuseModal({
+  passportJti,
+  agentId,
+  issuer,
+  pageUrl,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  passportJti: string;
+  agentId: string;
+  issuer: string;
+  pageUrl: string;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (
+    report: Omit<AbuseReportPayload, 'reporter' | 'reporter_kind' | 'v'>,
+  ) => Promise<void>;
+}) {
+  const [category, setCategory] = useState<AbuseReportPayload['category']>('impersonation');
+  const [severity, setSeverity] = useState<AbuseReportPayload['severity']>('medium');
+  const [description, setDescription] = useState('');
+  const [includePageUrl, setIncludePageUrl] = useState(true);
+
+  const canSubmit = description.trim().length >= 10 && !busy;
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    void onSubmit({
+      passport_jti: passportJti,
+      agent_id: agentId,
+      category,
+      severity,
+      occurred_at: Math.floor(Date.now() / 1000),
+      description: description.trim(),
+      evidence_urls: includePageUrl && pageUrl ? [pageUrl] : undefined,
+    });
+  };
+
+  return (
+    <div className="absolute inset-0 bg-zinc-950/95 backdrop-blur z-10 flex flex-col p-4 overflow-y-auto">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-semibold text-sm">Report abuse</h2>
+        <button
+          className="text-zinc-500 hover:text-zinc-200 text-xs"
+          onClick={onClose}
+          disabled={busy}
+        >
+          ✕ Close
+        </button>
+      </div>
+
+      <div className="text-xs text-zinc-400 mb-3">
+        Reporting <code className="text-zinc-300">{agentId}</code> from{' '}
+        <code className="text-violet-300">{issuer}</code>.
+      </div>
+
+      <label className="block mb-3">
+        <span className="text-[10px] uppercase tracking-widest text-zinc-500">Category</span>
+        <select
+          className="mt-1 w-full bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-200 px-2 py-1.5"
+          value={category}
+          onChange={(e) => setCategory(e.target.value as AbuseReportPayload['category'])}
+          disabled={busy}
+        >
+          {CATEGORIES.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="block mb-3">
+        <span className="text-[10px] uppercase tracking-widest text-zinc-500">Severity</span>
+        <select
+          className="mt-1 w-full bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-200 px-2 py-1.5"
+          value={severity}
+          onChange={(e) => setSeverity(e.target.value as AbuseReportPayload['severity'])}
+          disabled={busy}
+        >
+          {SEVERITIES.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="block mb-3">
+        <span className="text-[10px] uppercase tracking-widest text-zinc-500">
+          What happened? <span className="text-zinc-600">(min 10 chars)</span>
+        </span>
+        <textarea
+          className="mt-1 w-full bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-200 px-2 py-1.5 h-20 resize-none"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="One or two sentences. What did the agent do that warrants a report?"
+          disabled={busy}
+          maxLength={1000}
+        />
+        <div className="text-[10px] text-zinc-600 mt-1 text-right">
+          {description.length}/1000
+        </div>
+      </label>
+
+      <label className="flex items-start gap-2 mb-4 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={includePageUrl}
+          onChange={(e) => setIncludePageUrl(e.target.checked)}
+          disabled={busy}
+          className="mt-0.5"
+        />
+        <span className="text-xs text-zinc-400">
+          Include this page URL as evidence
+          <br />
+          <code className="text-[10px] text-zinc-600 break-all">{pageUrl}</code>
+        </span>
+      </label>
+
+      <div className="text-[10px] text-zinc-600 mb-3 leading-relaxed">
+        Your report is sent with an anonymous UUID — no email, no IP retention.
+        It feeds into the public reputation signal for this passport. False
+        reports erode reporter weight over time.
+      </div>
+
+      <div className="flex gap-2 mt-auto">
+        <button
+          className="flex-1 px-3 py-2 rounded text-xs font-medium bg-zinc-900 text-zinc-300 border border-zinc-800 hover:bg-zinc-800 disabled:opacity-50"
+          onClick={onClose}
+          disabled={busy}
+        >
+          Cancel
+        </button>
+        <button
+          className="flex-1 px-3 py-2 rounded text-xs font-medium bg-red-950 text-red-300 border border-red-800 hover:bg-red-900 disabled:opacity-50"
+          onClick={handleSubmit}
+          disabled={!canSubmit}
+        >
+          {busy ? 'Submitting…' : 'Submit report'}
+        </button>
+      </div>
     </div>
   );
 }

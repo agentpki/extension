@@ -14,10 +14,16 @@
 // tab state from chrome.storage.session on event re-entry.
 
 import { defineBackground } from 'wxt/sandbox';
-import { verifyToken, fetchTrustedIssuers, fetchReputation } from '../lib/verifier';
+import {
+  verifyToken,
+  fetchTrustedIssuers,
+  fetchReputation,
+  submitAbuseReport,
+} from '../lib/verifier';
 import {
   appendActivity,
   getActivity,
+  getInstallationId,
   getSettings,
   getUserLists,
   setUserLists,
@@ -361,6 +367,42 @@ export default defineBackground({
         void getActivity().then((entries) => {
           sendResponse({ kind: 'activity', entries });
         });
+        return true;
+      }
+      if (message.kind === 'report_abuse') {
+        void (async () => {
+          try {
+            const [installationId, settings] = await Promise.all([
+              getInstallationId(),
+              getSettings(),
+            ]);
+            const payload = {
+              v: 1 as const,
+              reporter: installationId,
+              reporter_kind: 'extension' as const,
+              ...message.report,
+            };
+            const result = await submitAbuseReport(payload, { base: settings.verifier_base });
+            // Invalidate reputation cache for this passport so the popup
+            // reflects the new report immediately on next open.
+            if (payload.passport_jti) {
+              reputationCache.delete(payload.passport_jti);
+            }
+            sendResponse({
+              kind: 'abuse_report_result',
+              accepted: result.accepted,
+              report_id: result.report_id,
+              error: result.error,
+            });
+          } catch (e) {
+            console.warn('[AgentPKI] abuse report failed:', e);
+            sendResponse({
+              kind: 'abuse_report_result',
+              accepted: false,
+              error: e instanceof Error ? e.message : 'unknown_error',
+            });
+          }
+        })();
         return true;
       }
       if (

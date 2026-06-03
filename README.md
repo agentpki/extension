@@ -45,15 +45,16 @@ Requires Node 20+ and either `pnpm`, `npm`, or `bun`.
 ```bash
 git clone https://github.com/agentpki/extension.git
 cd extension
-npm install
-npm run dev       # Chrome, runs WXT dev mode
+pnpm install
+pnpm icons        # one-shot: rasterize public/icon.svg into PNG sizes
+pnpm dev          # Chrome, runs WXT dev mode
 ```
 
 This opens a Chrome window with the extension auto-loaded. Edit any file under `entrypoints/` or `lib/` and the extension reloads. To produce a Chrome Web Store-ready zip:
 
 ```bash
-npm run build
-npm run zip
+pnpm build
+pnpm zip
 ```
 
 The packaged `.zip` lands in `.output/<browser>-mv3.zip`.

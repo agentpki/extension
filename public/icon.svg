@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- AgentPKI mark: violet shield enclosing a stylized "A" with a key cutout.
+       Designed to read at 16px as a violet pill with a white indicator. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <!-- Shield body -->
+  <path
+    d="M64 6 L112 22 L112 64 C112 92 90 116 64 122 C38 116 16 92 16 64 L16 22 Z"
+    fill="url(#g)"
+    stroke="#5b21b6"
+    stroke-width="2"
+  />
+  <!-- 'A' glyph (apex + crossbar) -->
+  <path
+    d="M40 92 L64 38 L88 92 L78 92 L72 78 L56 78 L50 92 Z M60 68 L68 68 L64 56 Z"
+    fill="#ffffff"
+  />
+  <!-- Key cutout indicating PKI -->
+  <circle cx="92" cy="48" r="7" fill="#ffffff"/>
+  <rect x="89" y="48" width="6" height="14" fill="#ffffff"/>
+  <rect x="91" y="58" width="6" height="3" fill="#7c3aed"/>
+</svg>

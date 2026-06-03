@@ -13,7 +13,8 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "postinstall": "wxt prepare",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "icons": "node scripts/make-icons.mjs"
   },
   "dependencies": {
     "@agentpki/sdk": "^0.1.0-alpha.1",
@@ -28,6 +29,7 @@
     "@wxt-dev/module-react": "1.1.1",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.41",
+    "sharp": "^0.33.5",
     "tailwindcss": "^3.4.10",
     "typescript": "^5.6.2",
     "wxt": "0.19.29"
