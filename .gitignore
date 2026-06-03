@@ -1,0 +1,11 @@
+node_modules/
+.wxt/
+.output/
+.vscode/
+.idea/
+*.log
+.env
+.env.local
+.DS_Store
+*.zip
+dist/
