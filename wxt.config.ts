@@ -23,6 +23,7 @@ export default defineConfig({
       'scripting',
       'declarativeNetRequest',
       'declarativeNetRequestFeedback',
+      'webNavigation', // for resetting tab state on page refresh / navigation
     ],
     host_permissions: ['<all_urls>'],
     action: {

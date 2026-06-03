@@ -207,5 +207,16 @@ export default defineBackground({
       tabStates.delete(tabId);
       void persist();
     });
+
+    // Reset per-tab state on every page navigation (including refresh).
+    // Without this, a verified badge from a previous page-load lingers when
+    // the same URL is reloaded — the stale verification keeps painting green
+    // even though the refreshed page has no agent.
+    chrome.webNavigation.onCommitted.addListener((details) => {
+      if (details.frameId !== 0) return; // ignore iframes
+      tabStates.delete(details.tabId);
+      void paintBadge(details.tabId, 'gray');
+      void persist();
+    });
   },
 });
