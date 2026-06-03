@@ -120,8 +120,11 @@ const INJECT_SCRIPT_TEXT = `
         }
       }
     }
+    // Dev-mode visibility — change detection appears in the page console
+    try { console.log('[AgentPKI] lib scan:', found); } catch (e) { /* swallow */ }
     notifyLibs(found);
   }
+  console.log('[AgentPKI] MAIN-world script active. Library scan running every 2s.');
   scanLibs();
   // Run forever (well, for the page's lifetime). Real agent libraries are
   // commonly mounted lazily after user interaction (e.g. opening a chat
