@@ -57,6 +57,9 @@ export interface TabState {
   page_url: string;
   observations: AgentObservation[];
   verification?: VerificationResult;
+  /** Token string corresponding to the cached `verification`. Used to detect
+   *  when a fresh observation carries a NEW token and we should re-verify. */
+  last_verified_token?: string;
   badge: BadgeColor;
   last_updated: number;
 }

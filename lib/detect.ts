@@ -17,13 +17,16 @@ import type { AgentObservation, DetectionVector } from './types';
 // ─── (1) Meta tag ─────────────────────────────────────────────────────
 
 export function detectMetaTag(doc: Document): string | null {
-  const meta = doc.querySelector('meta[name="agentpki-passport"]');
-  if (!meta) return null;
-  const content = meta.getAttribute('content');
-  if (!content) return null;
-  // Sanity: a PASETO token starts with v4.public.
-  if (!content.startsWith('v4.public.')) return null;
-  return content;
+  // If multiple meta tags exist (testing/dev pattern: user injects a second
+  // one without removing the first), take the LAST one — that's the most
+  // recently appended and matches user expectation that the new injection
+  // wins.
+  const metas = doc.querySelectorAll('meta[name="agentpki-passport"]');
+  for (let i = metas.length - 1; i >= 0; i--) {
+    const content = metas[i]?.getAttribute('content');
+    if (content && content.startsWith('v4.public.')) return content;
+  }
+  return null;
 }
 
 // ─── (3) JS library fingerprints ───────────────────────────────────────

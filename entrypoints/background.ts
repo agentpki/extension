@@ -115,6 +115,15 @@ async function ingestObservation(tabId: number, obs: AgentObservation): Promise<
     tabStates.set(tabId, st);
   }
 
+  // Dedupe identical observations (periodic library scans, repeated meta-tag
+  // re-sweeps with the same token) to keep TabState bounded.
+  const fingerprint =
+    obs.vector + '|' + (obs.token ?? '') + '|' + (obs.library ?? '') + '|' + (obs.signature_kid ?? '');
+  const isDuplicate = st.observations.some((o) =>
+    (o.vector + '|' + (o.token ?? '') + '|' + (o.library ?? '') + '|' + (o.signature_kid ?? '')) === fingerprint,
+  );
+  if (isDuplicate) return;
+
   st.observations.push({ ...obs, tab_id: tabId });
   st.last_updated = obs.detected_at;
 
@@ -122,23 +131,28 @@ async function ingestObservation(tabId: number, obs: AgentObservation): Promise<
   st.badge = deriveBadge(st);
   await paintBadge(tabId, st.badge);
 
-  // If we have a token, verify it. If we only have a library fingerprint
-  // or RFC signature kid, we stay yellow (v0.1 — extension cannot resolve
-  // an issuer's pubkey just from a kid without the matching token).
-  if (obs.token && !st.verification) {
-    try {
-      const settings = await getSettings();
-      const verification = await verifyToken(obs.token, { base: settings.verifier_base });
-      st.verification = verification;
-      st.badge = deriveBadge(st);
-      await paintBadge(tabId, st.badge);
-      void recordActivity(obs, verification);
-    } catch (e) {
-      console.warn('[AgentPKI] verify failed:', e);
-      st.badge = 'yellow';
-      await paintBadge(tabId, 'yellow');
+  // If we have a token, verify it. Re-verify when the token differs from the
+  // last one we verified for this tab — supports dev/testing pattern where a
+  // user injects a new <meta> to swap scenarios, and supports SPAs that swap
+  // their passport between routes.
+  if (obs.token) {
+    const lastVerifiedToken = st.last_verified_token;
+    if (obs.token !== lastVerifiedToken) {
+      try {
+        const settings = await getSettings();
+        const verification = await verifyToken(obs.token, { base: settings.verifier_base });
+        st.verification = verification;
+        st.last_verified_token = obs.token;
+        st.badge = deriveBadge(st);
+        await paintBadge(tabId, st.badge);
+        void recordActivity(obs, verification);
+      } catch (e) {
+        console.warn('[AgentPKI] verify failed:', e);
+        st.badge = 'yellow';
+        await paintBadge(tabId, 'yellow');
+      }
     }
-  } else if (!obs.token) {
+  } else {
     void recordActivity(obs, null);
   }
 

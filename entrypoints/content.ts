@@ -25,11 +25,23 @@ export default defineContentScript({
     runDetectionSweep();
     // Re-scan on SPA navigations / lazy-mounted agent libs
     const mo = new MutationObserver(() => {
-      // Debounce-ish: only re-sweep meta-tag presence, since libraries
-      // probably won't change after first paint
       scheduleMetaResweep();
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
+
+    // Periodic library re-scan (window properties don't fire DOM mutations,
+    // and many agent SDKs lazily install their globals after `load`). Fires
+    // every 3 seconds for the first 30 seconds, then stops. Cheap and bounded.
+    let scans = 0;
+    const libInterval = window.setInterval(() => {
+      scans++;
+      if (scans > 10) {
+        clearInterval(libInterval);
+        return;
+      }
+      const libs = detectLibraries(window);
+      for (const lib of libs) sendObservation({ vector: 'js_library', library: lib });
+    }, 3000);
 
     // Listen for outbound RFC 9421 events from the injected interceptor
     window.addEventListener('agentpki:outbound-signed', (ev) => {
