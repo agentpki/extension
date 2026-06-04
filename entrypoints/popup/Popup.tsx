@@ -217,13 +217,31 @@ function Skeleton() {
 
 function Empty() {
   return (
-    <div className="text-sm text-zinc-400">
-      <p className="font-medium text-zinc-300 mb-1">No agent detected on this page.</p>
-      <p className="text-xs leading-relaxed">
-        The toolbar badge will turn green when an AgentPKI-verified agent is present,
-        yellow if an agent is detected but unverified, red if revoked or reported
-        for abuse, and blue if it's your own agent.
-      </p>
+    <div className="text-sm text-zinc-400 space-y-3">
+      <div>
+        <p className="font-medium text-zinc-300 mb-1">No agent detected on this page.</p>
+        <p className="text-xs leading-relaxed">
+          Badge colors: green ✓ verified · yellow ! unverified · red ⛔ revoked
+          or reported · blue 👤 your own agent.
+        </p>
+      </div>
+      <div className="rounded border border-zinc-800 bg-zinc-900/40 p-2.5">
+        <p className="text-[11px] text-zinc-400 leading-relaxed">
+          <span className="text-amber-300">Heads-up:</span> AgentPKI is a brand-new
+          open standard. Most sites don't publish passports yet, so expect mostly
+          gray badges today — and yellow when a JS agent framework is detected.
+          Green badges appear as issuers adopt the spec. See{' '}
+          <a
+            className="text-violet-300 hover:text-violet-200 underline"
+            href="https://agentpki.dev/demo"
+            target="_blank"
+            rel="noreferrer"
+          >
+            the live demo
+          </a>{' '}
+          for a working green-path example.
+        </p>
+      </div>
     </div>
   );
 }

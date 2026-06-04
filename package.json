@@ -14,7 +14,8 @@
     "zip:firefox": "wxt zip -b firefox",
     "postinstall": "wxt prepare",
     "check": "tsc --noEmit",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "screenshots": "node scripts/resize-screenshots.mjs"
   },
   "dependencies": {
     "@agentpki/sdk": "^0.1.0-alpha.1",
